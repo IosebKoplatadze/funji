@@ -1,0 +1,2 @@
+# funji
+AI FunJi
