@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FunJi</title>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+    <h1 id="fitness"></h1>
+    <h1 id="generation"></h1>
+    <script>
+      // Define the parameters for the genetic algorithm
+      const populationSize = 50;
+      const mutationRate = 0.05;
+      const maxGenerations = 100;
+      const targetFitness = 0.1;
+      let pixels;
+      const myWorker = new Worker('worker.js');
+
+      // Load the reference image
+      const imgURL = prompt('Enter the URL of the reference image:');
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.src = imgURL;
+
+      img.onload = async () => {
+        // Convert the image into a pixel array
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, img.width, img.height);
+        pixels = imageData.data;
+
+        await genericAlgorithm();
+      };
+
+      // function for generate the reference image using colorful circles
+      async function genericAlgorithm() {
+        // Initialize the population
+        let population = await initializePopulation(
+          populationSize,
+          pixels.length
+        );
+
+        // Evaluate the fitness of the population
+        let fitness = await evaluateFitness(population);
+
+        // Keep track of the best individual
+        let bestIndividual = population[0];
+        let bestFitness = fitness[0];
+
+        // Keep track of the generation number
+        let generation = 0;
+
+        // Repeat until the target fitness is reached or the maximum number of generations is reached
+        while (bestFitness < targetFitness && generation < maxGenerations) {
+          // Select the parents
+          const parents = await selection(population, fitness);
+
+          // Crossover the parents to create the children
+          const children = await crossover(parents);
+
+          // Mutate the children
+          await mutate(children, mutationRate);
+
+          // Evaluate the fitness of the children
+          const childrenFitness = await evaluateFitness(children);
+
+          // Replace the population with the children
+          population = children;
+          fitness = childrenFitness;
+
+          // Update the best individual
+          const bestChildIndex = fitness.indexOf(Math.max(...fitness));
+          if (fitness[bestChildIndex] > bestFitness) {
+            bestIndividual = population[bestChildIndex];
+            bestFitness = fitness[bestChildIndex];
+          }
+
+          // Render the best individual
+          await render(bestIndividual, bestFitness);
+
+          // Increment the generation number
+          generation++;
+        }
+      }
+
+      //async function for initialize the population
+      async function initializePopulation(populationSize) {
+        const population = [];
+
+        for (let i = 0; i < populationSize; i++) {
+          const individual = [];
+
+          for (let j = 0; j < pixels.length; j += 4) {
+            individual.push(Math.random() * img.width);
+            individual.push(Math.random() * img.height);
+            individual.push(Math.random() * 100);
+            individual.push(Math.floor(Math.random() * 16777215));
+          }
+
+          population.push(individual);
+        }
+
+        return population;
+      }
+
+      //move to web worker
+
+      // Define the fitness function
+      function evaluateFitness(population) {
+        const fitness = new Array(population.length);
+
+        //parallelize this loop in web workers
+        for (let i = 0; i < population.length; i++) {
+          myWorker.postMessage([
+            i,
+            population[i],
+            img.width,
+            img.height,
+            pixels,
+          ]);
+        }
+
+        return new Promise((resolve) => {
+          // myWorker.onmessage = (e) => {
+          // console.log('🚀 ~ file: index.html:132 ~ returnnewPromise ~ e:', e);
+          // fitness[e.data[0]] = e.data[1];
+          // if (fitness.indexOf(undefined) === -1) {
+          resolve(fitness);
+          //   }
+          // };
+        });
+      }
+
+      async function selection(population, fitness) {
+        const parents = [];
+
+        for (let i = 0; i < population.length; i++) {
+          const parentA = population[await rouletteWheelSelection(fitness)];
+          const parentB = population[await rouletteWheelSelection(fitness)];
+          parents.push([parentA, parentB]);
+        }
+
+        return parents;
+      }
+
+      async function rouletteWheelSelection(fitness) {
+        let sum = 0;
+        for (let i = 0; i < fitness.length; i++) {
+          sum += fitness[i];
+        }
+
+        let random = Math.random() * sum;
+
+        for (let i = 0; i < fitness.length; i++) {
+          if (random < fitness[i]) {
+            return i;
+          }
+          random -= fitness[i];
+        }
+
+        return fitness.length - 1;
+      }
+
+      // Helper function for crossover
+      async function crossover(parentA, parentB) {
+        const childA = [];
+        const childB = [];
+
+        for (let i = 0; i < parentA.length; i++) {
+          if (Math.random() < 0.5) {
+            childA.push(parentA[i]);
+            childB.push(parentB[i]);
+          } else {
+            childA.push(parentB[i]);
+            childB.push(parentA[i]);
+          }
+        }
+
+        return [childA, childB];
+      }
+
+      // Helper function for mutation
+      async function mutate(individual, mutationRate) {
+        for (let i = 0; i < individual.length; i++) {
+          if (Math.random() < mutationRate) {
+            individual[i] += Math.floor(Math.random() * 10) - 5;
+          }
+        }
+      }
+
+      // Helper function for render async
+      async function render(individual, fitness) {
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = img.width;
+        canvas.height = img.height;
+
+        for (let i = 0; i < individual.length; i += 4) {
+          const x = individual[i];
+          const y = individual[i + 1];
+          const radius = individual[i + 2];
+          const color = individual[i + 3];
+
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, 2 * Math.PI);
+          ctx.fillStyle = `#${color.toString(16)}`;
+          ctx.fill();
+        }
+
+        document.getElementById('fitness').innerHTML = `Fitness: ${fitness}`;
+        document.getElementById(
+          'generation'
+        ).innerHTML = `Generation: ${generation}`;
+      }
+
+      // myWorker.onmessage = (e) => {
+      //   fitness[e.data[0]] = e.data[1];
+      // };
+    </script>
+  </body>
+</html>

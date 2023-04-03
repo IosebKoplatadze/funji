@@ -1,0 +1,14 @@
+{
+  "name": "funji",
+  "version": "1.0.0",
+  "description": "AI FunJi",
+  "scripts": {
+    "start": "parcel ./src/index.html",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Ioseb Koplatadze",
+  "license": "MIT",
+  "dependencies": {
+    "parcel": "^2.8.3"
+  }
+}
